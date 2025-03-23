@@ -164,18 +164,6 @@
         </div>
         
         <div id="resultsContainer" class="hidden">
-            <!-- API Quota Info -->
-            <div class="api-quota-box mb-6">
-                <div class="flex justify-between items-center mb-2">
-                    <div class="font-semibold text-gray-700">YouTube API Quota</div>
-                    <div id="quotaText" class="text-sm text-gray-600">9,500 units remaining of 10,000 daily quota</div>
-                </div>
-                <div class="progress-bar">
-                    <div id="quotaProgressBar" class="progress-bar-fill" style="width: 5%"></div>
-                </div>
-                <div class="mt-2 text-xs text-gray-500">Quota resets at midnight Indian Standard Time (IST)</div>
-            </div>
-            
             <!-- Channel Info -->
             <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
                 <div class="flex items-center mb-6">
@@ -367,8 +355,6 @@
         let customEndDate = null;
         let currentSortField = 'date';
         let currentSortDirection = 'desc';
-        let apiQuotaUsed = 0;
-        let apiQuotaTotal = 10000;
         let clipboardLinks = [];
         
         // DOM Elements
@@ -382,8 +368,6 @@
         const filteredCount = document.getElementById('filteredCount');
         const paginationElement = document.getElementById('pagination');
         const paginationInfo = document.getElementById('paginationInfo');
-        const quotaText = document.getElementById('quotaText');
-        const quotaProgressBar = document.getElementById('quotaProgressBar');
         const itemsPerPage = document.getElementById('itemsPerPage');
         const toast = document.getElementById('toast');
         
@@ -653,8 +637,6 @@
                 }
                 
                 // Track API quota usage - estimate 1 unit per request
-                updateApiQuota(1);
-                
                 return await response.json();
             } catch (error) {
                 console.error('API Call Error:', error);
@@ -699,10 +681,6 @@
                 // Extract channel ID or username from URL
                 const channelIdentifier = extractChannelIdentifier(channelUrl);
                 console.log('Analyzing channel:', channelIdentifier);
-                
-                // Reset API quota counter for new analysis
-                apiQuotaUsed = 0;
-                updateApiQuota(0);
                 
                 // Fetch real YouTube data
                 const { channel, videos } = await fetchYouTubeData(channelIdentifier);
