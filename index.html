@@ -439,6 +439,213 @@
         function handleTimeFilterChange() {
             if (timeFilter.value === 'custom') {
                 customDateContainer.classList.remove('hidden');
+            } else {
+                customDateContainer.classList.add('hidden');
+                filterAndDisplayVideos();
+            }
+        }
+        
+        function applyCustomDateFilter() {
+            if (customStartDate && customEndDate) {
+                filterAndDisplayVideos();
+            } else {
+                showError('Please select both start and end dates.');
+            }
+        }
+        
+        function setContentTypeFilter(type) {
+            contentTypeFilter = type;
+            
+            // Update button styles
+            allContentBtn.className = type === 'all' 
+                ? 'bg-red-600 text-white px-4 py-2 rounded font-medium transition'
+                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded font-medium transition';
+                
+            videosOnlyBtn.className = type === 'videos' 
+                ? 'bg-red-600 text-white px-4 py-2 rounded font-medium transition'
+                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded font-medium transition';
+                
+            shortsOnlyBtn.className = type === 'shorts' 
+                ? 'bg-red-600 text-white px-4 py-2 rounded font-medium transition'
+                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded font-medium transition';
+            
+            // Update video list
+            filterAndDisplayVideos();
+        }
+        
+        // Helper function to make API calls through our proxy
+        async function callYouTubeAPI(path, queryParams) {
+            try {
+                const response = await fetch('/api/youtube-api', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        path,
+                        queryParams,
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'API request failed');
+                }
+                
+                // Track API quota usage - estimate 1 unit per request
+                updateApiQuota(1);
+                
+                return await response.json();
+            } catch (error) {
+                console.error('API Call Error:', error);
+                throw error;
+            }
+        }
+        
+        // Update API quota display
+        function updateApiQuota(unitsUsed) {
+            apiQuotaUsed += unitsUsed;
+            const remaining = apiQuotaTotal - apiQuotaUsed;
+            const percentUsed = (apiQuotaUsed / apiQuotaTotal) * 100;
+            
+            quotaText.textContent = `${remaining.toLocaleString()} units remaining of ${apiQuotaTotal.toLocaleString()} daily quota`;
+            quotaProgressBar.style.width = `${percentUsed}%`;
+            
+            // Change color based on usage
+            if (percentUsed > 80) {
+                quotaProgressBar.style.backgroundColor = '#ef4444'; // red
+            } else if (percentUsed > 50) {
+                quotaProgressBar.style.backgroundColor = '#f59e0b'; // amber
+            } else {
+                quotaProgressBar.style.backgroundColor = '#3b82f6'; // blue
+            }
+        }
+        
+        // Main function to analyze channel
+        async function analyzeChannel() {
+            const channelUrl = channelUrlInput.value.trim();
+            
+            if (!channelUrl) {
+                showError('Please enter a YouTube channel URL');
+                return;
+            }
+            
+            // Reset UI
+            resetUI();
+            showLoading(true);
+            showError(''); // Clear any previous errors
+            
+            try {
+                // Extract channel ID or username from URL
+                const channelIdentifier = extractChannelIdentifier(channelUrl);
+                console.log('Analyzing channel:', channelIdentifier);
+                
+                // Reset API quota counter for new analysis
+                apiQuotaUsed = 0;
+                updateApiQuota(0);
+                
+                // Fetch real YouTube data
+                const { channel, videos } = await fetchYouTubeData(channelIdentifier);
+                
+                // Process videos to identify shorts vs. regular videos
+                processVideos(videos);
+                
+                // Store data globally
+                channelData = channel;
+                allVideos = videos;
+                
+                // Calculate statistics for each content type
+                calculateContentTypeStats();
+                
+                // Update UI with channel info
+                displayChannelInfo(channel);
+                
+                // Filter and display videos
+                filterAndDisplayVideos();
+                
+                // Show results
+                showResults(true);
+            } catch (error) {
+                showError(`Error: ${error.message || 'Unknown error occurred'}`);
+                console.error('Analysis Error:', error);
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // Function to process videos and identify shorts vs regular videos
+        function processVideos(videos) {
+            videos.forEach(video => {
+                // YouTube shorts are typically vertical videos (portrait mode)
+                // Shorts are typically <= 60 seconds
+                const isShort = video.durationSeconds <= 60;
+                video.isShort = isShort;
+            });
+        }
+        
+        // Calculate stats for regular videos and shorts separately
+        function calculateContentTypeStats() {
+            // Filter videos by type
+            const regularVideos = allVideos.filter(video => !video.isShort);
+            const shorts = allVideos.filter(video => video.isShort);
+            
+            // Regular videos stats
+            const regularTotalViews = regularVideos.reduce((sum, video) => sum + video.viewCount, 0);
+            const regularFrequency = calculateUploadFrequencyForVideos(regularVideos);
+            
+            // Shorts stats
+            const shortsTotalViews = shorts.reduce((sum, video) => sum + video.viewCount, 0);
+            const shortsFrequency = calculateUploadFrequencyForVideos(shorts);
+            
+            // Update channel object with these stats
+            channelData.regularVideosCount = regularVideos.length;
+            channelData.regularTotalViews = regularTotalViews;
+            channelData.regularAvgViews = regularVideos.length > 0 ? Math.floor(regularTotalViews / regularVideos.length) : 0;
+            channelData.regularUploadFrequency = regularFrequency;
+            
+            channelData.shortsCount = shorts.length;
+            channelData.shortsTotalViews = shortsTotalViews;
+            channelData.shortsAvgViews = shorts.length > 0 ? Math.floor(shortsTotalViews / shorts.length) : 0;
+            channelData.shortsUploadFrequency = shortsFrequency;
+        }
+        
+        // Calculate upload frequency for a specific set of videos
+        function calculateUploadFrequencyForVideos(videos) {
+            if (videos.length < 2) return 'Unknown';
+            
+            // Sort by date
+            const sortedDates = videos
+                .map(video => new Date(video.publishedAt))
+                .sort((a, b) => b - a);
+            
+            // Calculate average days between uploads
+            let totalDays = 0;
+            for (let i = 1; i < sortedDates.length; i++) {
+                const diffTime = Math.abs(sortedDates[i-1] - sortedDates[i]);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                totalDays += diffDays;
+            }
+            
+            const avgDays = totalDays / (sortedDates.length - 1);
+            
+            // Return readable frequency
+            if (avgDays < 3) return 'Multiple times per week';
+            if (avgDays < 7) return 'Weekly';
+            if (avgDays < 14) return 'Bi-weekly';
+            if (avgDays < 35) return 'Monthly';
+            if (avgDays < 90) return 'Quarterly';
+            return 'Infrequent';
+        }
+        
+        // Extract channel identifier from URL
+        function extractChannelIdentifier(url) {
+            // Extract channel username or ID from various URL formats
+            if (url.includes('youtube.com/@')) {
+                return '@' + url.split('@')[1].split('/')[0].split('?')[0];
+            } else if (url.includes('youtube.com/channel/')) {
+                return url.split('channel/')[1].split('/')[0].split('?')[0];
+            } else if (url.includes('youtube.com/user/')) {
+                return url.split('user/')[1].split('/')[0].split('?')[0];
             } else if (url.includes('youtube.com/c/')) {
                 return url.split('c/')[1].split('/')[0].split('?')[0];
             }
@@ -447,7 +654,7 @@
             return url;
         }
         
-        // Fetch YouTube data using our proxy
+       // Fetch YouTube data using our proxy
         async function fetchYouTubeData(channelIdentifier) {
             // First, get the channel ID if we have a username or handle
             let channelId = '';
@@ -972,211 +1179,4 @@
         }
     </script>
 </body>
-</html> {
-                customDateContainer.classList.add('hidden');
-                filterAndDisplayVideos();
-            }
-        }
-        
-        function applyCustomDateFilter() {
-            if (customStartDate && customEndDate) {
-                filterAndDisplayVideos();
-            } else {
-                showError('Please select both start and end dates.');
-            }
-        }
-        
-        function setContentTypeFilter(type) {
-            contentTypeFilter = type;
-            
-            // Update button styles
-            allContentBtn.className = type === 'all' 
-                ? 'bg-red-600 text-white px-4 py-2 rounded font-medium transition'
-                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded font-medium transition';
-                
-            videosOnlyBtn.className = type === 'videos' 
-                ? 'bg-red-600 text-white px-4 py-2 rounded font-medium transition'
-                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded font-medium transition';
-                
-            shortsOnlyBtn.className = type === 'shorts' 
-                ? 'bg-red-600 text-white px-4 py-2 rounded font-medium transition'
-                : 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded font-medium transition';
-            
-            // Update video list
-            filterAndDisplayVideos();
-        }
-        
-        // Helper function to make API calls through our proxy
-        async function callYouTubeAPI(path, queryParams) {
-            try {
-                const response = await fetch('/api/youtube-api', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        path,
-                        queryParams,
-                    }),
-                });
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || 'API request failed');
-                }
-                
-                // Track API quota usage - estimate 1 unit per request
-                updateApiQuota(1);
-                
-                return await response.json();
-            } catch (error) {
-                console.error('API Call Error:', error);
-                throw error;
-            }
-        }
-        
-        // Update API quota display
-        function updateApiQuota(unitsUsed) {
-            apiQuotaUsed += unitsUsed;
-            const remaining = apiQuotaTotal - apiQuotaUsed;
-            const percentUsed = (apiQuotaUsed / apiQuotaTotal) * 100;
-            
-            quotaText.textContent = `${remaining.toLocaleString()} units remaining of ${apiQuotaTotal.toLocaleString()} daily quota`;
-            quotaProgressBar.style.width = `${percentUsed}%`;
-            
-            // Change color based on usage
-            if (percentUsed > 80) {
-                quotaProgressBar.style.backgroundColor = '#ef4444'; // red
-            } else if (percentUsed > 50) {
-                quotaProgressBar.style.backgroundColor = '#f59e0b'; // amber
-            } else {
-                quotaProgressBar.style.backgroundColor = '#3b82f6'; // blue
-            }
-        }
-        
-        // Main function to analyze channel
-        async function analyzeChannel() {
-            const channelUrl = channelUrlInput.value.trim();
-            
-            if (!channelUrl) {
-                showError('Please enter a YouTube channel URL');
-                return;
-            }
-            
-            // Reset UI
-            resetUI();
-            showLoading(true);
-            showError(''); // Clear any previous errors
-            
-            try {
-                // Extract channel ID or username from URL
-                const channelIdentifier = extractChannelIdentifier(channelUrl);
-                console.log('Analyzing channel:', channelIdentifier);
-                
-                // Reset API quota counter for new analysis
-                apiQuotaUsed = 0;
-                updateApiQuota(0);
-                
-                // Fetch real YouTube data
-                const { channel, videos } = await fetchYouTubeData(channelIdentifier);
-                
-                // Process videos to identify shorts vs. regular videos
-                processVideos(videos);
-                
-                // Store data globally
-                channelData = channel;
-                allVideos = videos;
-                
-                // Calculate statistics for each content type
-                calculateContentTypeStats();
-                
-                // Update UI with channel info
-                displayChannelInfo(channel);
-                
-                // Filter and display videos
-                filterAndDisplayVideos();
-                
-                // Show results
-                showResults(true);
-            } catch (error) {
-                showError(`Error: ${error.message || 'Unknown error occurred'}`);
-                console.error('Analysis Error:', error);
-            } finally {
-                showLoading(false);
-            }
-        }
-        
-        // Function to process videos and identify shorts vs regular videos
-        function processVideos(videos) {
-            videos.forEach(video => {
-                // YouTube shorts are typically vertical videos (portrait mode)
-                // Shorts are typically <= 60 seconds
-                const isShort = video.durationSeconds <= 60;
-                video.isShort = isShort;
-            });
-        }
-        
-        // Calculate stats for regular videos and shorts separately
-        function calculateContentTypeStats() {
-            // Filter videos by type
-            const regularVideos = allVideos.filter(video => !video.isShort);
-            const shorts = allVideos.filter(video => video.isShort);
-            
-            // Regular videos stats
-            const regularTotalViews = regularVideos.reduce((sum, video) => sum + video.viewCount, 0);
-            const regularFrequency = calculateUploadFrequencyForVideos(regularVideos);
-            
-            // Shorts stats
-            const shortsTotalViews = shorts.reduce((sum, video) => sum + video.viewCount, 0);
-            const shortsFrequency = calculateUploadFrequencyForVideos(shorts);
-            
-            // Update channel object with these stats
-            channelData.regularVideosCount = regularVideos.length;
-            channelData.regularTotalViews = regularTotalViews;
-            channelData.regularAvgViews = regularVideos.length > 0 ? Math.floor(regularTotalViews / regularVideos.length) : 0;
-            channelData.regularUploadFrequency = regularFrequency;
-            
-            channelData.shortsCount = shorts.length;
-            channelData.shortsTotalViews = shortsTotalViews;
-            channelData.shortsAvgViews = shorts.length > 0 ? Math.floor(shortsTotalViews / shorts.length) : 0;
-            channelData.shortsUploadFrequency = shortsFrequency;
-        }
-        
-        // Calculate upload frequency for a specific set of videos
-        function calculateUploadFrequencyForVideos(videos) {
-            if (videos.length < 2) return 'Unknown';
-            
-            // Sort by date
-            const sortedDates = videos
-                .map(video => new Date(video.publishedAt))
-                .sort((a, b) => b - a);
-            
-            // Calculate average days between uploads
-            let totalDays = 0;
-            for (let i = 1; i < sortedDates.length; i++) {
-                const diffTime = Math.abs(sortedDates[i-1] - sortedDates[i]);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                totalDays += diffDays;
-            }
-            
-            const avgDays = totalDays / (sortedDates.length - 1);
-            
-            // Return readable frequency
-            if (avgDays < 3) return 'Multiple times per week';
-            if (avgDays < 7) return 'Weekly';
-            if (avgDays < 14) return 'Bi-weekly';
-            if (avgDays < 35) return 'Monthly';
-            if (avgDays < 90) return 'Quarterly';
-            return 'Infrequent';
-        }
-        
-        // Extract channel identifier from URL
-        function extractChannelIdentifier(url) {
-            // Extract channel username or ID from various URL formats
-            if (url.includes('youtube.com/@')) {
-                return '@' + url.split('@')[1].split('/')[0].split('?')[0];
-            } else if (url.includes('youtube.com/channel/')) {
-                return url.split('channel/')[1].split('/')[0].split('?')[0];
-            } else if (url.includes('youtube.com/user/')) {
-                return url.split('user/')[1].split('/')[0].split('?')[0];
-            } else
+</html>
