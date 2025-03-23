@@ -199,7 +199,7 @@
                         </div>
                         <div class="bg-gray-50 p-4 rounded">
                             <div class="text-2xl font-bold" id="avgRegularUploadFreq"></div>
-                            <div class="text-gray-600">Avg. Upload Frequency</div>
+                            <div class="text-gray-600">Videos per Month</div>
                         </div>
                         <div class="bg-gray-50 p-4 rounded">
                             <div class="text-2xl font-bold" id="avgRegularViews"></div>
@@ -221,7 +221,7 @@
                         </div>
                         <div class="bg-gray-50 p-4 rounded">
                             <div class="text-2xl font-bold" id="avgShortsUploadFreq"></div>
-                            <div class="text-gray-600">Avg. Upload Frequency</div>
+                            <div class="text-gray-600">Shorts per Month</div>
                         </div>
                         <div class="bg-gray-50 p-4 rounded">
                             <div class="text-2xl font-bold" id="avgShortsViews"></div>
@@ -788,8 +788,11 @@
             
             const avgDays = totalDays / (sortedDates.length - 1);
             
-            // Return average days between uploads (as a number with one decimal place)
-            return avgDays.toFixed(1) + ' days';
+            // Calculate videos per month (30 days / avg days between uploads)
+            const videosPerMonth = 30 / avgDays;
+            
+            // Return videos per month (as a number with one decimal place)
+            return videosPerMonth.toFixed(1);
         }
         
         // Extract channel identifier from URL
