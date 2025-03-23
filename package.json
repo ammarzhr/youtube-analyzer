@@ -1,0 +1,8 @@
+{
+  "name": "youtube-analyzer",
+  "version": "1.0.0",
+  "description": "YouTube Channel Analyzer",
+  "dependencies": {
+    "axios": "^0.27.2"
+  }
+}

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Channel Analyzer</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h1 class="text-3xl font-bold text-center mb-6 text-red-600">YouTube Channel Analyzer</h1>
+            
+            <div class="mb-6">
+                <label for="channelUrl" class="block text-gray-700 font-semibold mb-2">Enter YouTube Channel URL:</label>
+                <div class="flex">
+                    <input type="text" id="channelUrl" placeholder="https://www.youtube.com/@ChannelName" 
+                           class="flex-grow px-4 py-2 border rounded-l focus:outline-none focus:ring-2 focus:ring-red-500">
+                    <button id="analyzeBtn" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-r font-semibold transition">
+                        Analyze
+                    </button>
+                </div>
+                <p class="text-sm text-gray-500 mt-1">Example: https://www.youtube.com/@mkbhd</p>
+            </div>
+            
+            <div id="loading" class="hidden text-center py-10">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-red-600"></div>
+                <p class="mt-2 text-gray-700">Fetching channel data...</p>
+            </div>
+            
+            <div id="errorContainer" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert"></div>
+        </div>
+        
+        <div id="resultsContainer" class="hidden">
+            <!-- Channel Info -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+                <div class="flex items-center mb-4">
+                    <img id="channelThumbnail" src="" alt="Channel Thumbnail" class="w-20 h-20 rounded-full mr-4">
+                    <div>
+                        <h2 id="channelTitle" class="text-2xl font-bold"></h2>
+                        <p id="subscriberCount" class="text-gray-600"></p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+                    <div class="bg-gray-50 p-4 rounded">
+                        <div class="text-2xl font-bold" id="totalVideos"></div>
+                        <div class="text-gray-600">Total Videos</div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <div class="text-2xl font-bold" id="totalViews"></div>
+                        <div class="text-gray-600">Total Views</div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <div class="text-2xl font-bold" id="avgUploadFrequency"></div>
+                        <div class="text-gray-600">Avg. Upload Frequency</div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <div class="text-2xl font-bold" id="avgViews"></div>
+                        <div class="text-gray-600">Avg. Views per Video</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filters and Controls -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+                <h3 class="text-xl font-bold mb-4">Filter & Sort Videos</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <!-- Time Filter -->
+                    <div>
+                        <label for="timeFilter" class="block text-gray-700 font-semibold mb-2">Time Period:</label>
+                        <select id="timeFilter" class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-red-500">
+                            <option value="all">All Time</option>
+                            <option value="week">Last Week</option>
+                            <option value="month">Last Month</option>
+                            <option value="3months">Last 3 Months</option>
+                            <option value="6months">Last 6 Months</option>
+                            <option value="year">Last Year</option>
+                            <option value="2years">Last 2 Years</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Sort By -->
+                    <div>
+                        <label for="sortBy" class="block text-gray-700 font-semibold mb-2">Sort By:</label>
+                        <select id="sortBy" class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-red-500">
+                            <option value="date">Upload Date (Newest)</option>
+                            <option value="dateAsc">Upload Date (Oldest)</option>
+                            <option value="views">Views (Highest)</option>
+                            <option value="duration">Duration (Longest)</option>
+                            <option value="durationAsc">Duration (Shortest)</option>
+                            <option value="engagement">Engagement Rate</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Search -->
+                    <div>
+                        <label for="searchFilter" class="block text-gray-700 font-semibold mb-2">Search in Title:</label>
+                        <input type="text" id="searchFilter" placeholder="Search videos..." 
+                               class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-red-500">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Video List -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold">Videos (<span id="filteredCount">0</span>)</h3>
+                    <div id="pagination" class="flex space-x-2"></div>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 uppercase text-sm leading-normal">
+                                <th class="py-3 px-6 text-left">Thumbnail</th>
+                                <th class="py-3 px-6 text-left">Title</th>
+                                <th class="py-3 px-6 text-center">Duration</th>
+                                <th class="py-3 px-6 text-center">Views</th>
+                                <th class="py-3 px-6 text-center">Uploaded</th>
+                                <th class="py-3 px-6 text-center">Engagement</th>
+                            </tr>
+                        </thead>
+                        <tbody id="videoList" class="text-gray-600 text-sm">
+                            <!-- Videos will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="noVideos" class="hidden text-center py-10 text-gray-500">
+                    No videos match your filters.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let allVideos = [];
+        let channelData = null;
+        let currentPage = 1;
+        const videosPerPage = 10;
+        
+        // DOM Elements
+        const channelUrlInput = document.getElementById('channelUrl');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const loadingElement = document.getElementById('loading');
+        const errorContainer = document.getElementById('errorContainer');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const videoList = document.getElementById('videoList');
+        const noVideos = document.getElementById('noVideos');
+        const filteredCount = document.getElementById('filteredCount');
+        const paginationElement = document.getElementById('pagination');
+        
+        // Filter/Sort Elements
+        const timeFilter = document.getElementById('timeFilter');
+        const sortBy = document.getElementById('sortBy');
+        const searchFilter = document.getElementById('searchFilter');
+        
+        // Channel Info Elements
+        const channelThumbnail = document.getElementById('channelThumbnail');
+        const channelTitle = document.getElementById('channelTitle');
+        const subscriberCount = document.getElementById('subscriberCount');
+        const totalVideos = document.getElementById('totalVideos');
+        const totalViews = document.getElementById('totalViews');
+        const avgUploadFrequency = document.getElementById('avgUploadFrequency');
+        const avgViews = document.getElementById('avgViews');
+        
+        // Event Listeners
+        analyzeBtn.addEventListener('click', analyzeChannel);
+        timeFilter.addEventListener('change', filterAndDisplayVideos);
+        sortBy.addEventListener('change', filterAndDisplayVideos);
+        searchFilter.addEventListener('input', filterAndDisplayVideos);
+        
+        // Helper function to make API calls through our proxy
+        async function callYouTubeAPI(path, queryParams) {
+            try {
+                const response = await fetch('/api/youtube-api', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        path,
+                        queryParams,
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'API request failed');
+                }
+                
+                return await response.json();
+            } catch (error) {
+                console.error('API Call Error:', error);
+                throw error;
+            }
+        }
+        
+        // Main function to analyze channel
+        async function analyzeChannel() {
+            const channelUrl = channelUrlInput.value.trim();
+            
+            if (!channelUrl) {
+                showError('Please enter a YouTube channel URL');
+                return;
+            }
+            
+            // Reset UI
+            resetUI();
+            showLoading(true);
+            showError(''); // Clear any previous errors
+            
+            try {
+                // Extract channel ID or username from URL
+                const channelIdentifier = extractChannelIdentifier(channelUrl);
+                console.log('Analyzing channel:', channelIdentifier);
+                
+                // Fetch real YouTube data
+                const { channel, videos } = await fetchYouTubeData(channelIdentifier);
+                
+                // Store data globally
+                channelData = channel;
+                allVideos = videos;
+                
+                // Update UI with channel info
+                displayChannelInfo(channel);
+                
+                // Filter and display videos
+                filterAndDisplayVideos();
+                
+                // Show results
+                showResults(true);
+            } catch (error) {
+                showError(`Error: ${error.message || 'Unknown error occurred'}`);
+                console.error('Analysis Error:', error);
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // Extract channel identifier from URL
+        function extractChannelIdentifier(url) {
+            // Extract channel username or ID from various URL formats
+            if (url.includes('youtube.com/@')) {
+                return '@' + url.split('@')[1].split('/')[0].split('?')[0];
+            } else if (url.includes('youtube.com/channel/')) {
+                return url.split('channel/')[1].split('/')[0].split('?')[0];
+            } else if (url.includes('youtube.com/user/')) {
+                return url.split('user/')[1].split('/')[0].split('?')[0];
+            } else if (url.includes('youtube.com/c/')) {
+                return url.split('c/')[1].split('/')[0].split('?')[0];
+            }
+            
+            // If no pattern matches, return the URL as is
+            return url;
+        }
+        
+        // Fetch YouTube data using our proxy
+        async function fetchYouTubeData(channelIdentifier) {
+            // First, get the channel ID if we have a username or handle
+            let channelId = '';
+            
+            if (channelIdentifier.startsWith('@')) {
+                // Handle @ handles
+                const username = channelIdentifier.substring(1);
+                const channelData = await callYouTubeAPI('search', {
+                    part: 'snippet',
+                    q: username,
+                    type: 'channel',
+                    maxResults: 1
+                });
+                
+                if (channelData.items && channelData.items.length > 0) {
+                    channelId = channelData.items[0].id.channelId;
+                } else {
+                    throw new Error('Channel not found');
+                }
+            } else if (channelIdentifier.startsWith('UC')) {
+                // It's already a channel ID
+                channelId = channelIdentifier;
+            } else {
+                // Try to get channel by username
+                const channelData = await callYouTubeAPI('channels', {
+                    part: 'snippet',
+                    forUsername: channelIdentifier
+                });
+                
+                if (channelData.items && channelData.items.length > 0) {
+                    channelId = channelData.items[0].id;
+                } else {
+                    // If not found by username, try search
+                    const searchData = await callYouTubeAPI('search', {
+                        part: 'snippet',
+                        q: channelIdentifier,
+                        type: 'channel',
+                        maxResults: 1
+                    });
+                    
+                    if (searchData.items && searchData.items.length > 0) {
+                        channelId = searchData.items[0].id.channelId;
+                    } else {
+                        throw new Error('Channel not found');
+                    }
+                }
+            }
+            
+            // Get channel details
+            const channelData = await callYouTubeAPI('channels', {
+                part: 'snippet,statistics,contentDetails',
+                id: channelId
+            });
+            
+            if (!channelData.items || channelData.items.length === 0) {
+                throw new Error('Channel not found');
+            }
+            
+            const channelInfo = channelData.items[0];
+            
+            // Get uploads playlist ID
+            const uploadsPlaylistId = channelInfo.contentDetails.relatedPlaylists.uploads;
+            
+            // Get videos from the uploads playlist (up to 50)
+            const videosData = await callYouTubeAPI('playlistItems', {
+                part: 'snippet,contentDetails',
+                maxResults: 50,
+                playlistId: uploadsPlaylistId
+            });
+            
+            // Get video details (need separate call to get duration and view count)
+            const videoIds = videosData.items.map(item => item.contentDetails.videoId).join(',');
+            const videoDetailsData = await callYouTubeAPI('videos', {
+                part: 'contentDetails,statistics',
+                id: videoIds
+            });
+            
+            // Create a lookup for the video details
+            const videoDetailsMap = {};
+            videoDetailsData.items.forEach(item => {
+                videoDetailsMap[item.id] = item;
+            });
+            
+            // Process videos
+            const videos = [];
+            videosData.items.forEach(item => {
+                const videoDetails = videoDetailsMap[item.contentDetails.videoId];
+                if (!videoDetails) return; // Skip if we don't have details
+                
+                // Parse duration
+                const duration = videoDetails.contentDetails.duration; // Format: PT1H23M45S
+                const durationSeconds = parseDuration(duration);
+                
+                // Get stats
+                const viewCount = parseInt(videoDetails.statistics.viewCount) || 0;
+                const likeCount = parseInt(videoDetails.statistics.likeCount) || 0;
+                const commentCount = parseInt(videoDetails.statistics.commentCount) || 0;
+                
+                videos.push({
+                    id: item.contentDetails.videoId,
+                    title: item.snippet.title,
+                    description: item.snippet.description,
+                    url: `https://youtube.com/watch?v=${item.contentDetails.videoId}`,
+                    thumbnailUrl: item.snippet.thumbnails.medium.url,
+                    publishedAt: item.snippet.publishedAt,
+                    durationSeconds: durationSeconds,
+                    viewCount: viewCount,
+                    likeCount: likeCount,
+                    commentCount: commentCount,
+                    engagementRate: viewCount ? (likeCount + commentCount) / viewCount : 0
+                });
+            });
+            
+            // Format channel data
+            const channel = {
+                id: channelInfo.id,
+                title: channelInfo.snippet.title,
+                thumbnailUrl: channelInfo.snippet.thumbnails.default.url,
+                subscriberCount: parseInt(channelInfo.statistics.subscriberCount) || 0,
+                videoCount: parseInt(channelInfo.statistics.videoCount) || 0,
+                viewCount: parseInt(channelInfo.statistics.viewCount) || 0,
+                uploadFrequency: calculateUploadFrequency(videosData.items),
+                avgViews: channelInfo.statistics.videoCount > 0 ? 
+                    Math.floor(parseInt(channelInfo.statistics.viewCount) / parseInt(channelInfo.statistics.videoCount)) : 0
+            };
+            
+            return { channel, videos };
+        }
+        
+        // Helper function to parse duration from PT1H23M45S format
+        function parseDuration(duration) {
+            let hours = 0;
+            let minutes = 0;
+            let seconds = 0;
+            
+            // Hours
+            let match = duration.match(/(\d+)H/);
+            if (match) hours = parseInt(match[1]);
+            
+            // Minutes
+            match = duration.match(/(\d+)M/);
+            if (match) minutes = parseInt(match[1]);
+            
+            // Seconds
+            match = duration.match(/(\d+)S/);
+            if (match) seconds = parseInt(match[1]);
+            
+            return hours * 3600 + minutes * 60 + seconds;
+        }
+        
+        // Helper function to calculate upload frequency
+        function calculateUploadFrequency(videos) {
+            if (videos.length < 2) return 'Unknown';
+            
+            // Sort by date
+            const sortedDates = videos
+                .map(video => new Date(video.snippet.publishedAt))
+                .sort((a, b) => b - a);
+            
+            // Calculate average days between uploads
+            let totalDays = 0;
+            for (let i = 1; i < sortedDates.length; i++) {
+                const diffTime = Math.abs(sortedDates[i-1] - sortedDates[i]);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                totalDays += diffDays;
+            }
+            
+            const avgDays = totalDays / (sortedDates.length - 1);
+            
+            // Return readable frequency
+            if (avgDays < 3) return 'Multiple times per week';
+            if (avgDays < 7) return 'Weekly';
+            if (avgDays < 14) return 'Bi-weekly';
+            if (avgDays < 35) return 'Monthly';
+            if (avgDays < 90) return 'Quarterly';
+            return 'Infrequent';
+        }
+        
+        // UI Functions
+        function resetUI() {
+            errorContainer.classList.add('hidden');
+            resultsContainer.classList.add('hidden');
+            videoList.innerHTML = '';
+            noVideos.classList.add('hidden');
+            currentPage = 1;
+        }
+        
+        function showLoading(show) {
+            if (show) {
+                loadingElement.classList.remove('hidden');
+            } else {
+                loadingElement.classList.add('hidden');
+            }
+        }
+        
+        function showError(message) {
+            if (!message) {
+                errorContainer.classList.add('hidden');
+                return;
+            }
+            errorContainer.textContent = message;
+            errorContainer.classList.remove('hidden');
+        }
+        
+        function showResults(show) {
+            if (show) {
+                resultsContainer.classList.remove('hidden');
+            } else {
+                resultsContainer.classList.add('hidden');
+            }
+        }
+        
+        function displayChannelInfo(channel) {
+            channelThumbnail.src = channel.thumbnailUrl;
+            channelTitle.textContent = channel.title;
+            subscriberCount.textContent = `${formatNumber(channel.subscriberCount)} subscribers`;
+            totalVideos.textContent = formatNumber(channel.videoCount);
+            totalViews.textContent = formatNumber(channel.viewCount);
+            avgUploadFrequency.textContent = channel.uploadFrequency;
+            avgViews.textContent = formatNumber(channel.avgViews);
+        }
+        
+        function filterAndDisplayVideos() {
+            const timeValue = timeFilter.value;
+            const sortValue = sortBy.value;
+            const searchValue = searchFilter.value.toLowerCase();
+            
+            // Apply time filter
+            let filteredVideos = filterByTime(allVideos, timeValue);
+            
+            // Apply search filter
+            if (searchValue) {
+                filteredVideos = filteredVideos.filter(video => 
+                    video.title.toLowerCase().includes(searchValue)
+                );
+            }
+            
+            // Apply sorting
+            filteredVideos = sortVideos(filteredVideos, sortValue);
+            
+            // Update filtered count
+            filteredCount.textContent = filteredVideos.length;
+            
+            // Display filtered videos with pagination
+            displayPaginatedVideos(filteredVideos);
+        }
+        
+        function filterByTime(videos, timeValue) {
+            if (timeValue === 'all') return videos;
+            
+            const now = new Date();
+            let cutoffDate;
+            
+            switch (timeValue) {
+                case 'week':
+                    cutoffDate = new Date(now.setDate(now.getDate() - 7));
+                    break;
+                case 'month':
+                    cutoffDate = new Date(now.setMonth(now.getMonth() - 1));
+                    break;
+                case '3months':
+                    cutoffDate = new Date(now.setMonth(now.getMonth() - 3));
+                    break;
+                case '6months':
+                    cutoffDate = new Date(now.setMonth(now.getMonth() - 6));
+                    break;
+                case 'year':
+                    cutoffDate = new Date(now.setFullYear(now.getFullYear() - 1));
+                    break;
+                case '2years':
+                    cutoffDate = new Date(now.setFullYear(now.getFullYear() - 2));
+                    break;
+                default:
+                    return videos;
+            }
+            
+            return videos.filter(video => new Date(video.publishedAt) >= cutoffDate);
+        }
+        
+        function sortVideos(videos, sortValue) {
+            switch (sortValue) {
+                case 'date':
+                    return [...videos].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+                case 'dateAsc':
+                    return [...videos].sort((a, b) => new Date(a.publishedAt) - new Date(b.publishedAt));
+                case 'views':
+                    return [...videos].sort((a, b) => b.viewCount - a.viewCount);
+                case 'duration':
+                    return [...videos].sort((a, b) => b.durationSeconds - a.durationSeconds);
+                case 'durationAsc':
+                    return [...videos].sort((a, b) => a.durationSeconds - b.durationSeconds);
+                case 'engagement':
+                    return [...videos].sort((a, b) => b.engagementRate - a.engagementRate);
+                default:
+                    return videos;
+            }
+        }
+        
+        function displayPaginatedVideos(videos) {
+            // Clear current list
+            videoList.innerHTML = '';
+            
+            // Calculate pagination
+            const totalPages = Math.ceil(videos.length / videosPerPage);
+            
+            // Adjust current page if out of bounds
+            if (currentPage > totalPages) {
+                currentPage = 1;
+            }
+            
+            // Calculate slice indices
+            const startIndex = (currentPage - 1) * videosPerPage;
+            const endIndex = startIndex + videosPerPage;
+            
+            // Get current page videos
+            const currentVideos = videos.slice(startIndex, endIndex);
+            
+            // Display videos
+            if (currentVideos.length > 0) {
+                currentVideos.forEach(video => {
+                    const row = createVideoRow(video);
+                    videoList.appendChild(row);
+                });
+                noVideos.classList.add('hidden');
+            } else {
+                noVideos.classList.remove('hidden');
+            }
+            
+            // Update pagination controls
+            updatePagination(totalPages);
+        }
+        
+        function createVideoRow(video) {
+            const row = document.createElement('tr');
+            row.className = 'border-b border-gray-200 hover:bg-gray-100';
+            
+            row.innerHTML = `
+                <td class="py-3 px-6 text-left whitespace-nowrap">
+                    <div class="relative w-24 h-16 overflow-hidden rounded">
+                        <img src="${video.thumbnailUrl}" alt="${video.title}" class="w-full h-full object-cover">
+                        <div class="absolute bottom-0 right-0 bg-black bg-opacity-75 text-white text-xs px-1">
+                            ${formatDuration(video.durationSeconds)}
+                        </div>
+                    </div>
+                </td>
+                <td class="py-3 px-6 text-left">
+                    <a href="${video.url}" target="_blank" class="text-blue-600 hover:text-blue-800 font-medium">
+                        ${video.title}
+                    </a>
+                </td>
+                <td class="py-3 px-6 text-center">${formatDuration(video.durationSeconds)}</td>
+                <td class="py-3 px-6 text-center">${formatNumber(video.viewCount)}</td>
+                <td class="py-3 px-6 text-center">${formatDate(video.publishedAt)}</td>
+                <td class="py-3 px-6 text-center">
+                    <div class="flex items-center justify-center">
+                        <span class="${getEngagementColorClass(video.engagementRate)} px-2 py-1 rounded text-xs">
+                            ${(video.engagementRate * 100).toFixed(1)}%
+                        </span>
+                    </div>
+                </td>
+            `;
+            
+            return row;
+        }
+        
+        function updatePagination(totalPages) {
+            paginationElement.innerHTML = '';
+            
+            if (totalPages <= 1) return;
+            
+            // Previous button
+            const prevBtn = document.createElement('button');
+            prevBtn.textContent = '←';
+            prevBtn.className = 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1 px-3 rounded';
+            prevBtn.disabled = currentPage === 1;
+            if (currentPage > 1) {
+                prevBtn.addEventListener('click', () => {
+                    currentPage--;
+                    filterAndDisplayVideos();
+                });
+            } else {
+                prevBtn.className += ' opacity-50 cursor-not-allowed';
+            }
+            paginationElement.appendChild(prevBtn);
+            
+            // Page numbers
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            
+            if (endPage - startPage < 4) {
+                startPage = Math.max(1, endPage - 4);
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const pageBtn = document.createElement('button');
+                pageBtn.textContent = i;
+                pageBtn.className = i === currentPage 
+                    ? 'bg-red-600 text-white font-semibold py-1 px-3 rounded'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1 px-3 rounded';
+                pageBtn.addEventListener('click', () => {
+                    currentPage = i;
+                    filterAndDisplayVideos();
+                });
+                paginationElement.appendChild(pageBtn);
+            }
+            
+            // Next button
+            const nextBtn = document.createElement('button');
+            nextBtn.textContent = '→';
+            nextBtn.className = 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-1 px-3 rounded';
+            nextBtn.disabled = currentPage === totalPages;
+            if (currentPage < totalPages) {
+                nextBtn.addEventListener('click', () => {
+                    currentPage++;
+                    filterAndDisplayVideos();
+                });
+            } else {
+                nextBtn.className += ' opacity-50 cursor-not-allowed';
+            }
+            paginationElement.appendChild(nextBtn);
+        }
+        
+        // Helper Functions
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num;
+        }
+        
+        function formatDuration(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            
+            if (hours > 0) {
+                return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+            return `${minutes}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function formatDate(dateString) {
+            return moment(dateString).fromNow();
+        }
+        
+        function getEngagementColorClass(rate) {
+            if (rate >= 0.1) return 'bg-green-500 text-white';
+            if (rate >= 0.05) return 'bg-blue-500 text-white';
+            if (rate >= 0.03) return 'bg-yellow-500';
+            return 'bg-gray-500 text-white';
+        }
+    </script>
+</body>
+</html>
