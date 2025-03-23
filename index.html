@@ -499,7 +499,7 @@
                 linkText.href = item.url;
                 linkText.target = '_blank';
                 linkText.className = 'text-blue-600 hover:text-blue-800 hover:underline flex-grow';
-                linkText.textContent = item.title || item.url;
+                linkText.textContent = item.url;
                 
                 const deleteButton = document.createElement('button');
                 deleteButton.className = 'ml-2 text-red-500 hover:text-red-700';
@@ -517,7 +517,6 @@
             const exists = clipboardLinks.some(item => item.url === video.url);
             if (!exists) {
                 clipboardLinks.push({
-                    title: video.title,
                     url: video.url
                 });
                 saveClipboard();
@@ -789,13 +788,8 @@
             
             const avgDays = totalDays / (sortedDates.length - 1);
             
-            // Return readable frequency
-            if (avgDays < 3) return 'Multiple times per week';
-            if (avgDays < 7) return 'Weekly';
-            if (avgDays < 14) return 'Bi-weekly';
-            if (avgDays < 35) return 'Monthly';
-            if (avgDays < 90) return 'Quarterly';
-            return 'Infrequent';
+            // Return average days between uploads (as a number with one decimal place)
+            return avgDays.toFixed(1) + ' days';
         }
         
         // Extract channel identifier from URL
