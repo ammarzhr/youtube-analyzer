@@ -669,7 +669,7 @@
             }
         }
         
-        // Enhanced function to fetch YouTube data combining multiple methods
+        // Fetch YouTube data with pagination
         async function fetchYouTubeData(channelIdentifier) {
             // First, get the channel ID if we have a username or handle
             let channelId = '';
@@ -733,23 +733,90 @@
             // Get uploads playlist ID
             const uploadsPlaylistId = channelInfo.contentDetails.relatedPlaylists.uploads;
             
-            // Use both search and playlist endpoints to get more videos
-            const videos = await Promise.all([
-                fetchVideosByPlaylist(uploadsPlaylistId),
-                fetchVideosBySearch(channelId)
-            ]).then(results => {
-                // Combine and deduplicate videos from both methods
-                const playlistVideos = results[0];
-                const searchVideos = results[1];
-                
-                // Create a map of video IDs we already have from playlist method
-                const existingVideoIds = new Set(playlistVideos.map(video => video.id));
-                
-                // Add videos from search that we don't already have
-                const uniqueSearchVideos = searchVideos.filter(video => !existingVideoIds.has(video.id));
-                
-                return [...playlistVideos, ...uniqueSearchVideos];
-            });
+            // Get videos from the uploads playlist with pagination
+            let allVideoItems = [];
+            let nextPageToken = '';
+            const maxPages = 3; // Fetch up to 150 videos (50 per page)
+            
+            for (let page = 0; page < maxPages; page++) {
+                try {
+                    const videosResponse = await callYouTubeAPI('playlistItems', {
+                        part: 'snippet,contentDetails',
+                        maxResults: 50,
+                        playlistId: uploadsPlaylistId,
+                        pageToken: nextPageToken
+                    });
+                    
+                    if (videosResponse.items && videosResponse.items.length > 0) {
+                        allVideoItems = [...allVideoItems, ...videosResponse.items];
+                    }
+                    
+                    if (!videosResponse.nextPageToken) {
+                        break;
+                    }
+                    
+                    nextPageToken = videosResponse.nextPageToken;
+                } catch (error) {
+                    console.error('Error fetching playlist page:', error);
+                    break;
+                }
+            }
+            
+            // Get video IDs in batches (YouTube API has limit on number of IDs in a single request)
+            const videos = [];
+            const batchSize = 50;
+            
+            for (let i = 0; i < allVideoItems.length; i += batchSize) {
+                try {
+                    const batchItems = allVideoItems.slice(i, i + batchSize);
+                    const videoIds = batchItems.map(item => item.contentDetails.videoId).join(',');
+                    
+                    const videoDetailsResponse = await callYouTubeAPI('videos', {
+                        part: 'contentDetails,statistics',
+                        id: videoIds
+                    });
+                    
+                    // Create a map of video details for quick lookup
+                    const videoDetailsMap = {};
+                    videoDetailsResponse.items.forEach(item => {
+                        videoDetailsMap[item.id] = item;
+                    });
+                    
+                    // Process videos
+                    batchItems.forEach(item => {
+                        const videoDetails = videoDetailsMap[item.contentDetails.videoId];
+                        if (!videoDetails) {
+                            return; // Skip if we don't have details
+                        }
+                        
+                        // Parse duration
+                        const duration = videoDetails.contentDetails.duration; // Format: PT1H23M45S
+                        const durationSeconds = parseDuration(duration);
+                        
+                        // Get stats
+                        const viewCount = parseInt(videoDetails.statistics.viewCount) || 0;
+                        const likeCount = parseInt(videoDetails.statistics.likeCount) || 0;
+                        const commentCount = parseInt(videoDetails.statistics.commentCount) || 0;
+                        
+                        videos.push({
+                            id: item.contentDetails.videoId,
+                            title: item.snippet.title,
+                            description: item.snippet.description,
+                            url: `https://youtube.com/watch?v=${item.contentDetails.videoId}`,
+                            thumbnailUrl: item.snippet.thumbnails.medium ? item.snippet.thumbnails.medium.url : 
+                                        (item.snippet.thumbnails.default ? item.snippet.thumbnails.default.url : ''),
+                            publishedAt: item.snippet.publishedAt,
+                            durationSeconds: durationSeconds,
+                            viewCount: viewCount,
+                            likeCount: likeCount,
+                            commentCount: commentCount,
+                            engagementRate: viewCount > 0 ? (likeCount + commentCount) / viewCount : 0
+                        });
+                    });
+                } catch (error) {
+                    console.error('Error fetching video details batch:', error);
+                }
+            }
             
             // Format channel data
             const channel = {
@@ -765,186 +832,6 @@
             };
             
             return { channel, videos };
-        }
-        
-        // Fetch videos using the playlistItems endpoint (up to 200 videos)
-        async function fetchVideosByPlaylist(playlistId) {
-            let allVideoItems = [];
-            let nextPageToken = null;
-            const maxPages = 4; // Fetch up to 200 videos (50 per page)
-            
-            for (let i = 0; i < maxPages; i++) {
-                try {
-                    const videosData = await callYouTubeAPI('playlistItems', {
-                        part: 'snippet,contentDetails',
-                        maxResults: 50,
-                        playlistId: playlistId,
-                        pageToken: nextPageToken || ''
-                    });
-                    
-                    if (!videosData.items || videosData.items.length === 0) {
-                        break;
-                    }
-                    
-                    allVideoItems = [...allVideoItems, ...videosData.items];
-                    
-                    if (!videosData.nextPageToken) {
-                        break;
-                    }
-                    
-                    nextPageToken = videosData.nextPageToken;
-                } catch (error) {
-                    console.error('Error fetching playlist page:', error);
-                    break;
-                }
-            }
-            
-            // Get all video IDs to fetch details
-            const videoIds = allVideoItems.map(item => item.contentDetails.videoId).join(',');
-            if (!videoIds) return [];
-            
-            // Get video details
-            try {
-                const videoDetailsData = await callYouTubeAPI('videos', {
-                    part: 'contentDetails,statistics',
-                    id: videoIds
-                });
-                
-                // Create a lookup for the video details
-                const videoDetailsMap = {};
-                if (videoDetailsData.items) {
-                    videoDetailsData.items.forEach(item => {
-                        videoDetailsMap[item.id] = item;
-                    });
-                }
-                
-                // Process videos
-                const videos = [];
-                allVideoItems.forEach(item => {
-                    const videoDetails = videoDetailsMap[item.contentDetails.videoId];
-                    if (!videoDetails) return; // Skip if we don't have details
-                    
-                    // Parse duration
-                    const duration = videoDetails.contentDetails.duration; // Format: PT1H23M45S
-                    const durationSeconds = parseDuration(duration);
-                    
-                    // Get stats
-                    const viewCount = parseInt(videoDetails.statistics.viewCount) || 0;
-                    const likeCount = parseInt(videoDetails.statistics.likeCount) || 0;
-                    const commentCount = parseInt(videoDetails.statistics.commentCount) || 0;
-                    
-                    videos.push({
-                        id: item.contentDetails.videoId,
-                        title: item.snippet.title,
-                        description: item.snippet.description,
-                        url: `https://youtube.com/watch?v=${item.contentDetails.videoId}`,
-                        thumbnailUrl: item.snippet.thumbnails.medium ? item.snippet.thumbnails.medium.url : 
-                                    (item.snippet.thumbnails.default ? item.snippet.thumbnails.default.url : ''),
-                        publishedAt: item.snippet.publishedAt,
-                        durationSeconds: durationSeconds,
-                        viewCount: viewCount,
-                        likeCount: likeCount,
-                        commentCount: commentCount,
-                        engagementRate: viewCount ? (likeCount + commentCount) / viewCount : 0
-                    });
-                });
-                
-                return videos;
-            } catch (error) {
-                console.error('Error fetching video details:', error);
-                return [];
-            }
-        }
-        
-        // Fetch videos using the search endpoint (can find videos not in the uploads playlist)
-        async function fetchVideosBySearch(channelId) {
-            let allVideoItems = [];
-            let nextPageToken = null;
-            const maxPages = 4; // Fetch up to 200 videos (50 per page)
-            
-            for (let i = 0; i < maxPages; i++) {
-                try {
-                    const searchData = await callYouTubeAPI('search', {
-                        part: 'snippet',
-                        channelId: channelId,
-                        maxResults: 50,
-                        order: 'date',
-                        type: 'video',
-                        pageToken: nextPageToken || ''
-                    });
-                    
-                    if (!searchData.items || searchData.items.length === 0) {
-                        break;
-                    }
-                    
-                    allVideoItems = [...allVideoItems, ...searchData.items];
-                    
-                    if (!searchData.nextPageToken) {
-                        break;
-                    }
-                    
-                    nextPageToken = searchData.nextPageToken;
-                } catch (error) {
-                    console.error('Error fetching search page:', error);
-                    break;
-                }
-            }
-            
-            // Get all video IDs to fetch details
-            const videoIds = allVideoItems.map(item => item.id.videoId).join(',');
-            if (!videoIds) return [];
-            
-            // Get video details
-            try {
-                const videoDetailsData = await callYouTubeAPI('videos', {
-                    part: 'contentDetails,statistics',
-                    id: videoIds
-                });
-                
-                // Create a lookup for the video details
-                const videoDetailsMap = {};
-                if (videoDetailsData.items) {
-                    videoDetailsData.items.forEach(item => {
-                        videoDetailsMap[item.id] = item;
-                    });
-                }
-                
-                // Process videos
-                const videos = [];
-                allVideoItems.forEach(item => {
-                    const videoDetails = videoDetailsMap[item.id.videoId];
-                    if (!videoDetails) return; // Skip if we don't have details
-                    
-                    // Parse duration
-                    const duration = videoDetails.contentDetails.duration; // Format: PT1H23M45S
-                    const durationSeconds = parseDuration(duration);
-                    
-                    // Get stats
-                    const viewCount = parseInt(videoDetails.statistics.viewCount) || 0;
-                    const likeCount = parseInt(videoDetails.statistics.likeCount) || 0;
-                    const commentCount = parseInt(videoDetails.statistics.commentCount) || 0;
-                    
-                    videos.push({
-                        id: item.id.videoId,
-                        title: item.snippet.title,
-                        description: item.snippet.description,
-                        url: `https://youtube.com/watch?v=${item.id.videoId}`,
-                        thumbnailUrl: item.snippet.thumbnails.medium ? item.snippet.thumbnails.medium.url : 
-                                    (item.snippet.thumbnails.default ? item.snippet.thumbnails.default.url : ''),
-                        publishedAt: item.snippet.publishedAt,
-                        durationSeconds: durationSeconds,
-                        viewCount: viewCount,
-                        likeCount: likeCount,
-                        commentCount: commentCount,
-                        engagementRate: viewCount ? (likeCount + commentCount) / viewCount : 0
-                    });
-                });
-                
-                return videos;
-            } catch (error) {
-                console.error('Error fetching search video details:', error);
-                return [];
-            }
         }
         
         // Function to process videos and identify shorts vs regular videos
